@@ -1,0 +1,84 @@
+#!/bin/bash
+# systemd support script for konga 
+
+# for sanity, the name of this file should not have an extension.
+# eg:  "konga" instead of "konga.sh"
+
+script=`basename $0`
+arg=$1;   # we accept only one arg.
+
+logfile="/tmp/${script}.log"
+lockfile="/var/lock/${script}/${script}.lock"
+
+echo "======================================================" >> ${logfile}
+echo "Script: ${0} Args: ${arg}"                              >> ${logfile}
+echo "PWD: ${PWD} -- inherited from the shell"                >> ${logfile}
+
+# root trap
+if [ $USER = "root" ];
+then
+   echo "Refusing to launch a root-privileged process."       >> ${logfile}
+   exit 1
+fi 
+
+case ${arg} in 
+   start) # create a konga client.
+      echo -n "Attempting to start konga (npm start)...."    >> ${logfile}
+      cd ${PWD};
+      /usr/local/bin/npm start & RETVAL=$?; PID=$!;           
+      if [ ${RETVAL} -eq 0 ];                                 
+      then                                                    
+         echo "Success."                                      >> ${logfile}
+         echo "${PID}" > ${lockfile};                         
+         exit 0;
+      else                                                    
+         echo "Failed."                                       >> ${logfile}
+         echo "RETVAL = ${RETVAL} "                           >> ${logfile}
+         exit ${RETVAL};
+      fi
+   ;;
+
+   stop)  # stop the running konga client.
+      echo -n "Attempting to stop konga (kill PID)...."       >> ${logfile}
+      # expecting ${lockfile} to contain the process number for the 
+      # currently running konga process.
+      if [ -f ${lockfile} ]; 
+      then
+         # validate ${lockfile}
+         # - look only at the first line
+         # - expect a 1-5 digit string without leading or trailing spaces.
+         PID=`head -1 ${lockfile} | grep "^[[:digit:]]\{1,5\}$"`;
+      else
+         echo "Failed."                                       >> ${logfile}
+         echo "${lockfile} not found."                        >> ${logfile}
+         exit 1
+      fi
+
+      if [ "${PID}" = "" ];
+      then
+         echo "Failed."                                       >> ${logfile}
+         echo "Cannot determine PID from ${lockfile}"         >> ${logfile}
+         exit 1
+      else
+         kill ${PID}; 
+         RETVAL=$?;
+         if [ ${RETVAL} -eq 0 ];
+         then
+            echo "Success."                                   >> ${logfile}
+            rm -f ${lockfile};
+            exit 0;
+         else
+            echo "Failed."                                    >> ${logfile}
+            echo "Process ${PID} refused to die."             >> ${logfile}
+            echo "RETVAL = ${RETVAL} "                        >> ${logfile}
+            exit ${RETVAL};
+         fi
+      fi
+   ;;
+
+   *) # unsupported method
+      echo "Unsupported method [ ${arg} ]";                   >> ${logfile}
+   ;;
+esac
+
+
